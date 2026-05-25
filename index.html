@@ -1,0 +1,1043 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ケイドロ 3D</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a0f; overflow: hidden; font-family: 'Courier New', monospace; color: #fff; }
+  #canvas { display: block; }
+
+  #ui {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    pointer-events: none; z-index: 10;
+  }
+
+  /* HUD */
+  #hud {
+    position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 24px; align-items: center;
+    background: rgba(0,0,0,0.6); border: 1px solid #333;
+    padding: 10px 24px; border-radius: 4px;
+    backdrop-filter: blur(8px);
+  }
+  .hud-item { text-align: center; }
+  .hud-label { font-size: 9px; letter-spacing: 2px; color: #888; text-transform: uppercase; }
+  .hud-value { font-size: 22px; font-weight: bold; letter-spacing: 1px; }
+  #timer-val { color: #4ef; }
+  #role-val { color: #fa4; }
+  #score-val { color: #4f8; }
+  .hud-sep { width: 1px; height: 36px; background: #333; }
+
+  /* 通知バナー */
+  #banner {
+    position: absolute; top: 80px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.8); border: 1px solid #4ef;
+    padding: 8px 24px; border-radius: 4px;
+    font-size: 13px; letter-spacing: 2px; color: #4ef;
+    text-transform: uppercase; transition: opacity 0.4s;
+    white-space: nowrap;
+  }
+  #banner.hidden { opacity: 0; pointer-events: none; }
+
+  /* スタート画面 */
+  #start-screen {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.85); backdrop-filter: blur(4px);
+    pointer-events: all; gap: 16px;
+  }
+  #start-screen h1 {
+    font-size: 52px; letter-spacing: 8px; color: #4ef;
+    text-shadow: 0 0 40px #4ef8, 0 0 80px #4ef4;
+    font-weight: 900;
+  }
+  #start-screen p { color: #888; letter-spacing: 2px; font-size: 12px; }
+  .big-btn {
+    margin-top: 12px; padding: 14px 48px;
+    background: transparent; border: 2px solid #4ef;
+    color: #4ef; font-family: inherit; font-size: 14px; letter-spacing: 3px;
+    cursor: pointer; text-transform: uppercase; transition: all 0.2s;
+    pointer-events: all;
+  }
+  .big-btn:hover { background: #4ef; color: #000; }
+
+  /* ルール説明 */
+  .rules {
+    max-width: 360px; text-align: left;
+    background: rgba(255,255,255,0.04); border: 1px solid #222;
+    padding: 16px; border-radius: 4px; font-size: 11px; line-height: 1.9; color: #aaa;
+  }
+  .rules span { color: #fa4; }
+
+  /* ゲームオーバー画面 */
+  #result-screen {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.85); backdrop-filter: blur(4px);
+    pointer-events: all; gap: 16px; display: none;
+  }
+  #result-title { font-size: 42px; letter-spacing: 6px; font-weight: 900; }
+  #result-sub { color: #888; letter-spacing: 2px; font-size: 13px; }
+
+  /* ミニマップ */
+  #minimap {
+    position: absolute; bottom: 16px; right: 16px;
+    width: 120px; height: 120px;
+    background: rgba(0,0,0,0.6); border: 1px solid #333;
+    border-radius: 4px; overflow: hidden;
+  }
+  #minimap canvas { width: 100%; height: 100%; }
+
+  /* 操作説明 */
+  #controls {
+    position: absolute; bottom: 16px; left: 16px;
+    font-size: 10px; color: #555; line-height: 1.8; letter-spacing: 1px;
+  }
+
+  /* ステージ名 */
+  #stage-name {
+    position: absolute; top: 16px; right: 16px;
+    font-size: 10px; color: #555; letter-spacing: 2px; text-transform: uppercase;
+  }
+
+  /* 捕まった演出 */
+  #caught-flash {
+    position: absolute; inset: 0;
+    background: rgba(255,50,50,0.3);
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.1s;
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+
+<div id="ui">
+  <div id="hud">
+    <div class="hud-item">
+      <div class="hud-label">Time</div>
+      <div class="hud-value" id="timer-val">3:00</div>
+    </div>
+    <div class="hud-sep"></div>
+    <div class="hud-item">
+      <div class="hud-label">You</div>
+      <div class="hud-value" id="role-val">泥</div>
+    </div>
+    <div class="hud-sep"></div>
+    <div class="hud-item">
+      <div class="hud-label">Escaped</div>
+      <div class="hud-value" id="score-val">0/3</div>
+    </div>
+  </div>
+
+  <div id="banner" class="hidden">-</div>
+  <div id="stage-name">STAGE -</div>
+
+  <div id="minimap"><canvas id="mm-canvas" width="120" height="120"></canvas></div>
+
+  <div id="controls">
+    WASD / 矢印 → 移動<br>
+    マウス → 視点<br>
+    SHIFT → ダッシュ<br>
+    SPACE → ジャンプ
+  </div>
+
+  <div id="caught-flash"></div>
+
+  <div id="start-screen">
+    <h1>ケイドロ</h1>
+    <p>3D LOWPOLY TAG GAME</p>
+    <div class="rules">
+      <span>【泥棒】</span> として逃げ切れ！<br>
+      ・3分間、警察（AI）に捕まらないように<br>
+      ・牢屋に入れられた仲間を<span>タッチで救出</span><br>
+      ・全員捕まったら負け<br><br>
+      <span>【警察AI】</span> の動き<br>
+      ・プレイヤーを追跡・捕獲する<br>
+      ・捕まえたら牢屋に連れて行く<br><br>
+      <span>ステージ</span> はランダムで5 or 6が選ばれる
+    </div>
+    <button class="big-btn" id="start-btn">START GAME</button>
+  </div>
+
+  <div id="result-screen">
+    <div id="result-title">-</div>
+    <div id="result-sub">-</div>
+    <button class="big-btn" id="retry-btn">RETRY</button>
+  </div>
+</div>
+
+<!-- Firebase -->
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getFirestore, doc, setDoc, getDoc, updateDoc, serverTimestamp }
+  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyD_NY3dGf30kZcFZqrCpriT-6iMNetexOg",
+  authDomain: "keidoro-c807d.firebaseapp.com",
+  projectId: "keidoro-c807d",
+  storageBucket: "keidoro-c807d.firebasestorage.app",
+  messagingSenderId: "108028658286",
+  appId: "1:108028658806:web:1209605c20f10db084dc7f"
+};
+const app = initializeApp(firebaseConfig);
+const db  = getFirestore(app);
+
+// スコア保存
+window.saveScore = async (won, time, stage) => {
+  try {
+    const ref = doc(db, 'scores', 'solo_' + Date.now());
+    await setDoc(ref, { won, time, stage, ts: serverTimestamp() });
+  } catch(e) { console.warn('Firebase save failed:', e); }
+};
+
+// ハイスコア取得（最近10件）
+window.getTopScores = async () => {
+  try {
+    const { getDocs, collection, query, orderBy, limit } =
+      await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+    const q = query(collection(db, 'scores'), orderBy('ts','desc'), limit(10));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => d.data());
+  } catch(e) { return []; }
+};
+</script>
+
+<!-- Three.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script>
+// =============================================
+//  GAME ENGINE
+// =============================================
+const canvas = document.getElementById('canvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x0a0a1a, 30, 120);
+scene.background = new THREE.Color(0x0a0a1a);
+
+const camera = new THREE.PerspectiveCamera(70, 1, 0.1, 200);
+camera.position.set(0, 8, 12);
+
+// リサイズ
+function resize() {
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+}
+resize();
+window.addEventListener('resize', resize);
+
+// =============================================
+//  LIGHTING
+// =============================================
+const ambLight = new THREE.AmbientLight(0x223355, 0.8);
+scene.add(ambLight);
+
+const dirLight = new THREE.DirectionalLight(0xaaccff, 1.2);
+dirLight.position.set(30, 60, 20);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.set(1024,1024);
+dirLight.shadow.camera.near = 1;
+dirLight.shadow.camera.far = 200;
+dirLight.shadow.camera.left = -60;
+dirLight.shadow.camera.right = 60;
+dirLight.shadow.camera.top = 60;
+dirLight.shadow.camera.bottom = -60;
+scene.add(dirLight);
+
+const ptLight = new THREE.PointLight(0x4488ff, 0.6, 80);
+ptLight.position.set(-10, 20, -10);
+scene.add(ptLight);
+
+// =============================================
+//  MATERIALS (ローポリ)
+// =============================================
+const MAT = {
+  ground:  new THREE.MeshLambertMaterial({ color: 0x1a2a1a }),
+  wall:    new THREE.MeshLambertMaterial({ color: 0x2a3345 }),
+  wall2:   new THREE.MeshLambertMaterial({ color: 0x1e2b3a }),
+  player:  new THREE.MeshLambertMaterial({ color: 0xffaa33 }),
+  police:  new THREE.MeshLambertMaterial({ color: 0x3399ff }),
+  thief:   new THREE.MeshLambertMaterial({ color: 0xff4444 }),
+  jail:    new THREE.MeshLambertMaterial({ color: 0xaaaa44, wireframe: false }),
+  jailBar: new THREE.MeshLambertMaterial({ color: 0xcccc55 }),
+  road:    new THREE.MeshLambertMaterial({ color: 0x222233 }),
+  tree:    new THREE.MeshLambertMaterial({ color: 0x226622 }),
+  trunk:   new THREE.MeshLambertMaterial({ color: 0x553322 }),
+  roof:    new THREE.MeshLambertMaterial({ color: 0x334455 }),
+  marker:  new THREE.MeshLambertMaterial({ color: 0xff4444, transparent: true, opacity: 0.7 }),
+  safe:    new THREE.MeshLambertMaterial({ color: 0x33ffaa, transparent: true, opacity: 0.4 }),
+};
+
+// =============================================
+//  STAGE DEFINITIONS
+// =============================================
+const STAGES = {
+  5: {
+    name: 'STAGE 5 - URBAN GRID',
+    size: 60,
+    jailPos: { x: -20, z: -20 },
+    generate(group, walls) {
+      // 地面
+      const gGeo = new THREE.PlaneGeometry(60,60,8,8);
+      const gMesh = new THREE.Mesh(gGeo, MAT.ground);
+      gMesh.rotation.x = -Math.PI/2; gMesh.receiveShadow = true;
+      group.add(gMesh);
+
+      // 境界壁
+      addBoundaryWalls(group, walls, 60);
+
+      // 道路グリッド
+      const roadGeo = new THREE.PlaneGeometry(4, 60);
+      for(let x of [-10, 0, 10]) {
+        const r = new THREE.Mesh(roadGeo, MAT.road);
+        r.rotation.x = -Math.PI/2; r.position.set(x, 0.01, 0);
+        group.add(r);
+      }
+      const roadGeo2 = new THREE.PlaneGeometry(60, 4);
+      for(let z of [-10, 0, 10]) {
+        const r = new THREE.Mesh(roadGeo2, MAT.road);
+        r.rotation.x = -Math.PI/2; r.position.set(0, 0.01, z);
+        group.add(r);
+      }
+
+      // ブロック状の建物
+      const buildings = [
+        {x:-15,z:-15,w:8,d:8,h:6}, {x:15,z:-15,w:8,d:8,h:9},
+        {x:-15,z:15,w:8,d:8,h:7}, {x:15,z:15,w:8,d:8,h:5},
+        {x:0,z:-22,w:6,d:4,h:8},  {x:0,z:22,w:6,d:4,h:6},
+        {x:-22,z:0,w:4,d:6,h:7},  {x:22,z:0,w:4,d:6,h:10},
+        {x:-22,z:-22,w:5,d:5,h:4},{x:22,z:-22,w:5,d:5,h:6},
+        {x:-22,z:22,w:5,d:5,h:5}, {x:22,z:22,w:5,d:5,h:7},
+      ];
+      buildings.forEach(b => {
+        addBuilding(group, walls, b.x, b.z, b.w, b.d, b.h);
+      });
+
+      // 木
+      const trees = [[-5,-5],[5,-5],[-5,5],[5,5],[0,-5],[0,5]];
+      trees.forEach(([x,z]) => addTree(group, x, z));
+    }
+  },
+  6: {
+    name: 'STAGE 6 - MAZE CITY',
+    size: 64,
+    jailPos: { x: -25, z: -25 },
+    generate(group, walls) {
+      // 地面
+      const gGeo = new THREE.PlaneGeometry(64,64,10,10);
+      const gMesh = new THREE.Mesh(gGeo, MAT.ground);
+      gMesh.rotation.x = -Math.PI/2; gMesh.receiveShadow = true;
+      group.add(gMesh);
+
+      addBoundaryWalls(group, walls, 64);
+
+      // 迷路風壁
+      const mazeWalls = [
+        // 横
+        {x:0,z:-20,w:24,d:1.5,h:4},{x:-16,z:-10,w:16,d:1.5,h:4},
+        {x:8,z:-5,w:12,d:1.5,h:4},{x:0,z:5,w:20,d:1.5,h:4},
+        {x:-8,z:15,w:16,d:1.5,h:4},{x:12,z:20,w:8,d:1.5,h:4},
+        {x:-20,z:0,w:10,d:1.5,h:4},{x:16,z:10,w:10,d:1.5,h:4},
+        // 縦
+        {x:-20,z:-8,w:1.5,d:16,h:4},{x:-5,z:-14,w:1.5,d:10,h:4},
+        {x:10,z:-15,w:1.5,d:8,h:4},{x:20,z:-12,w:1.5,d:14,h:4},
+        {x:5,z:8,w:1.5,d:12,h:4},{x:-12,z:8,w:1.5,d:10,h:4},
+        {x:20,z:5,w:1.5,d:16,h:4},{x:-25,z:10,w:1.5,d:12,h:4},
+      ];
+      mazeWalls.forEach(w => {
+        const geo = new THREE.BoxGeometry(w.w, w.h, w.d);
+        const mesh = new THREE.Mesh(geo, MAT.wall2);
+        mesh.position.set(w.x, w.h/2, w.z);
+        mesh.castShadow = true; mesh.receiveShadow = true;
+        group.add(mesh);
+        walls.push({x:w.x, z:w.z, hw:w.w/2, hd:w.d/2});
+      });
+
+      // 広場的スポット
+      const plazas = [
+        {x:0,z:0,w:8,d:8},{x:-18,z:18,w:6,d:6},{x:18,z:-18,w:6,d:6}
+      ];
+      plazas.forEach(p => {
+        const geo = new THREE.PlaneGeometry(p.w, p.d);
+        const m = new THREE.Mesh(geo, MAT.road);
+        m.rotation.x=-Math.PI/2; m.position.set(p.x, 0.01, p.z);
+        group.add(m);
+      });
+
+      // 建物（小）
+      const smBuildings = [
+        {x:-10,z:-25,w:5,d:5,h:5},{x:10,z:-25,w:5,d:5,h:8},
+        {x:25,z:-10,w:5,d:5,h:6},{x:25,z:10,w:5,d:5,h:5},
+        {x:10,z:25,w:5,d:5,h:7},{x:-10,z:25,w:5,d:5,h:4},
+        {x:-25,z:20,w:4,d:6,h:6},{x:-22,z:-5,w:5,d:4,h:9},
+      ];
+      smBuildings.forEach(b => addBuilding(group, walls, b.x, b.z, b.w, b.d, b.h));
+
+      // 木
+      const trees = [[0,0],[15,0],[0,15],[-15,0],[0,-15],[15,15],[-15,-15]];
+      trees.forEach(([x,z]) => addTree(group, x, z));
+    }
+  }
+};
+
+// =============================================
+//  HELPERS
+// =============================================
+function addBoundaryWalls(group, walls, size) {
+  const h = 6, t = 2, half = size/2;
+  const configs = [
+    [0,    h/2, -half-t/2, size+t*2, h, t],
+    [0,    h/2,  half+t/2, size+t*2, h, t],
+    [-half-t/2, h/2, 0, t, h, size],
+    [ half+t/2, h/2, 0, t, h, size],
+  ];
+  configs.forEach(([x,y,z,w,hh,d]) => {
+    const geo = new THREE.BoxGeometry(w,hh,d);
+    const m = new THREE.Mesh(geo, MAT.wall);
+    m.position.set(x,y,z); m.castShadow=true; m.receiveShadow=true;
+    group.add(m);
+    walls.push({x, z, hw:w/2, hd:d/2});
+  });
+}
+
+function addBuilding(group, walls, x, z, w, d, h) {
+  const geo = new THREE.BoxGeometry(w, h, d);
+  const m = new THREE.Mesh(geo, MAT.wall);
+  m.position.set(x, h/2, z);
+  m.castShadow=true; m.receiveShadow=true;
+  group.add(m);
+  // 屋根
+  const roofGeo = new THREE.ConeGeometry(Math.max(w,d)*0.65, h*0.3, 4);
+  const roof = new THREE.Mesh(roofGeo, MAT.roof);
+  roof.position.set(x, h + h*0.15, z);
+  roof.rotation.y = Math.PI/4;
+  group.add(roof);
+  walls.push({x, z, hw:w/2, hd:d/2});
+}
+
+function addTree(group, x, z) {
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.15, 0.2, 1.5, 5),
+    MAT.trunk
+  );
+  trunk.position.set(x, 0.75, z);
+  group.add(trunk);
+  const leaves = new THREE.Mesh(
+    new THREE.ConeGeometry(1.2, 2.5, 5),
+    MAT.tree
+  );
+  leaves.position.set(x, 2.75, z);
+  group.add(leaves);
+}
+
+function createPlayerMesh(mat) {
+  const g = new THREE.Group();
+  // 胴体
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.7,1,0.4), mat);
+  body.position.y = 0.5; body.castShadow=true;
+  g.add(body);
+  // 頭
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.5,0.5), mat);
+  head.position.y = 1.25; head.castShadow=true;
+  g.add(head);
+  // 足
+  [-0.18, 0.18].forEach(ox => {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.25,0.6,0.25), mat);
+    leg.position.set(ox, -0.3, 0); leg.castShadow=true;
+    g.add(leg);
+  });
+  return g;
+}
+
+// =============================================
+//  JAIL
+// =============================================
+function createJail(group, jailPos) {
+  const jx = jailPos.x, jz = jailPos.z;
+  const jailGroup = new THREE.Group();
+  jailGroup.position.set(jx, 0, jz);
+
+  // 床
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(5,5), MAT.jail);
+  floor.rotation.x = -Math.PI/2; floor.position.y = 0.01;
+  jailGroup.add(floor);
+
+  // バー
+  const barMat = MAT.jailBar;
+  for(let i=-2; i<=2; i++) {
+    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.08,3,5), barMat);
+    bar.position.set(i*0.9, 1.5, 2.5);
+    jailGroup.add(bar);
+    const bar2 = new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.08,3,5), barMat);
+    bar2.position.set(i*0.9, 1.5, -2.5);
+    jailGroup.add(bar2);
+    const bar3 = new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.08,3,5), barMat);
+    bar3.position.set(-2.5, 1.5, i*0.9);
+    jailGroup.add(bar3);
+    const bar4 = new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.08,3,5), barMat);
+    bar4.position.set(2.5, 1.5, i*0.9);
+    jailGroup.add(bar4);
+  }
+
+  group.add(jailGroup);
+  return { x: jx, z: jz, r: 3 };
+}
+
+// =============================================
+//  GAME STATE
+// =============================================
+const state = {
+  phase: 'start', // start / playing / result
+  stageId: 5,
+  timeLeft: 180,
+  thieves: [],  // {mesh, x, z, caught, inJail, id}
+  police: [],   // {mesh, x, z, target, state}
+  player: null, // {mesh, x, z, vx, vz, onGround}
+  jail: null,
+  walls: [],
+  stageGroup: null,
+  camYaw: 0,
+  camPitch: 0.3,
+  keys: {},
+  mouseX: 0,
+  mouseY: 0,
+  isPointerLocked: false,
+  maxThieves: 3,
+  escapedCount: 0,
+  winner: null,
+};
+
+// =============================================
+//  INPUT
+// =============================================
+document.addEventListener('keydown', e => {
+  state.keys[e.code] = true;
+  if(e.code==='Space') e.preventDefault();
+});
+document.addEventListener('keyup', e => { state.keys[e.code] = false; });
+
+canvas.addEventListener('click', () => {
+  if(state.phase === 'playing') canvas.requestPointerLock();
+});
+document.addEventListener('pointerlockchange', () => {
+  state.isPointerLocked = document.pointerLockElement === canvas;
+});
+document.addEventListener('mousemove', e => {
+  if(!state.isPointerLocked) return;
+  state.camYaw   -= e.movementX * 0.002;
+  state.camPitch  = Math.max(-0.1, Math.min(1.0, state.camPitch + e.movementY * 0.002));
+});
+
+// =============================================
+//  COLLISION
+// =============================================
+function collide(x, z, radius) {
+  let nx = x, nz = z;
+  for(const w of state.walls) {
+    const dx = nx - w.x, dz = nz - w.z;
+    const ox = w.hw + radius - Math.abs(dx);
+    const oz = w.hd + radius - Math.abs(dz);
+    if(ox > 0 && oz > 0) {
+      if(ox < oz) nx += Math.sign(dx) * ox;
+      else        nz += Math.sign(dz) * oz;
+    }
+  }
+  // 境界
+  const half = (STAGES[state.stageId].size/2) - 1;
+  nx = Math.max(-half, Math.min(half, nx));
+  nz = Math.max(-half, Math.min(half, nz));
+  return [nx, nz];
+}
+
+// =============================================
+//  STAGE INIT
+// =============================================
+function initStage() {
+  // 既存ステージ削除
+  if(state.stageGroup) scene.remove(state.stageGroup);
+  state.walls = [];
+
+  const sg = new THREE.Group();
+  state.stageGroup = sg;
+
+  const stg = STAGES[state.stageId];
+  stg.generate(sg, state.walls);
+
+  // 牢屋
+  state.jail = createJail(sg, stg.jailPos);
+
+  scene.add(sg);
+
+  // プレイヤー（泥棒）
+  if(state.player && state.player.mesh) scene.remove(state.player.mesh);
+  const pm = createPlayerMesh(MAT.player);
+  pm.position.set(5, 0, 5);
+  scene.add(pm);
+  state.player = { mesh: pm, x: 5, z: 5, vy: 0, onGround: true };
+
+  // AIの泥棒
+  state.thieves = [];
+  const tPositions = [[-5, -5],[-5, 5],[5,-5]];
+  for(let i=0; i<3; i++) {
+    const tm = createPlayerMesh(MAT.thief);
+    const [tx,tz] = tPositions[i];
+    tm.position.set(tx, 0, tz);
+    scene.add(tm);
+    state.thieves.push({
+      mesh: tm, x: tx, z: tz, caught: false, inJail: false,
+      id: i, vx: 0, vz: 0, timer: 0,
+      dir: Math.random()*Math.PI*2,
+    });
+  }
+
+  // 警察AI
+  state.police = [];
+  const policePositions = [[0, -20], [-20, 0]];
+  for(let i=0; i<2; i++) {
+    const pm2 = createPlayerMesh(MAT.police);
+    const [px,pz] = policePositions[i];
+    pm2.position.set(px, 0, pz);
+    scene.add(pm2);
+    state.police.push({
+      mesh: pm2, x: px, z: pz,
+      state: 'patrol', // patrol / chase / return / escort
+      target: null, carrying: null,
+      patrolTimer: 0, patrolDir: Math.random()*Math.PI*2,
+      speed: 3.0 + i*0.3,
+    });
+  }
+
+  document.getElementById('stage-name').textContent = stg.name;
+  state.timeLeft = 180;
+  state.escapedCount = 0;
+  updateHUD();
+}
+
+// =============================================
+//  AI LOGIC
+// =============================================
+function updatePoliceAI(pol, dt) {
+  const CATCH_DIST = 1.2;
+  const DETECT_DIST = 20;
+  const SPEED = pol.speed;
+
+  const px = state.player.x, pz = state.player.z;
+  const distP = Math.hypot(pol.x - px, pol.z - pz);
+
+  // 運んでいる場合 → 牢屋へ連れていく
+  if(pol.carrying !== null) {
+    pol.state = 'escort';
+    const jx = state.jail.x, jz = state.jail.z;
+    const djx = jx - pol.x, djz = jz - pol.z;
+    const dj = Math.hypot(djx, djz);
+    if(dj < 2) {
+      // 牢屋に到着
+      const t = pol.carrying;
+      t.inJail = true;
+      pol.carrying = null;
+      pol.state = 'patrol';
+      showBanner('泥棒が捕まった！ タッチで救出！', '#fa4');
+    } else {
+      const spd = SPEED * 0.9 * dt;
+      let nx = pol.x + (djx/dj)*spd;
+      let nz = pol.z + (djz/dj)*spd;
+      [nx, nz] = collide(nx, nz, 0.4);
+      pol.x = nx; pol.z = nz;
+      pol.mesh.position.set(nx, 0, nz);
+      pol.mesh.rotation.y = Math.atan2(djx, djz);
+    }
+    return;
+  }
+
+  // ターゲット設定：プレイヤー or AI泥棒
+  let bestDist = Infinity, bestTarget = null, bestIsPlayer = false;
+
+  if(distP < DETECT_DIST && !state.player.caught) {
+    bestDist = distP; bestTarget = state.player; bestIsPlayer = true;
+  }
+  state.thieves.forEach(t => {
+    if(t.caught || t.inJail) return;
+    const d = Math.hypot(pol.x - t.x, pol.z - t.z);
+    if(d < DETECT_DIST && d < bestDist) {
+      bestDist = d; bestTarget = t; bestIsPlayer = false;
+    }
+  });
+
+  if(bestTarget) {
+    pol.state = 'chase';
+    const tx = bestIsPlayer ? state.player.x : bestTarget.x;
+    const tz = bestIsPlayer ? state.player.z : bestTarget.z;
+    const ddx = tx - pol.x, ddz = tz - pol.z;
+    const dd = Math.hypot(ddx, ddz);
+
+    if(dd < CATCH_DIST) {
+      // 捕まえた
+      if(bestIsPlayer) {
+        catchPlayer(pol);
+      } else {
+        pol.carrying = bestTarget;
+        bestTarget.caught = true;
+      }
+    } else {
+      const spd = SPEED * dt;
+      let nx = pol.x + (ddx/dd)*spd;
+      let nz = pol.z + (ddz/dd)*spd;
+      [nx, nz] = collide(nx, nz, 0.4);
+      pol.x = nx; pol.z = nz;
+      pol.mesh.position.set(nx, 0, nz);
+      pol.mesh.rotation.y = Math.atan2(ddx, ddz);
+    }
+  } else {
+    // パトロール
+    pol.state = 'patrol';
+    pol.patrolTimer -= dt;
+    if(pol.patrolTimer <= 0) {
+      pol.patrolDir = Math.random() * Math.PI * 2;
+      pol.patrolTimer = 1.5 + Math.random() * 2;
+    }
+    const spd = SPEED * 0.5 * dt;
+    let nx = pol.x + Math.sin(pol.patrolDir)*spd;
+    let nz = pol.z + Math.cos(pol.patrolDir)*spd;
+    [nx, nz] = collide(nx, nz, 0.4);
+    if(nx===pol.x && nz===pol.z) pol.patrolDir = Math.random()*Math.PI*2;
+    pol.x = nx; pol.z = nz;
+    pol.mesh.position.set(nx, 0, nz);
+    pol.mesh.rotation.y = pol.patrolDir;
+  }
+}
+
+function catchPlayer(pol) {
+  // フラッシュ
+  const flash = document.getElementById('caught-flash');
+  flash.style.opacity = '1';
+  setTimeout(() => flash.style.opacity = '0', 300);
+  showBanner('捕まった！ 牢屋送りに…', '#f44');
+
+  // プレイヤーを牢屋へ
+  const jx = state.jail.x, jz = state.jail.z;
+  state.player.x = jx + (Math.random()-0.5)*2;
+  state.player.z = jz + (Math.random()-0.5)*2;
+  state.player.mesh.position.set(state.player.x, 0, state.player.z);
+  state.player.inJail = true;
+  pol.state = 'patrol';
+}
+
+// =============================================
+//  AI THIEF LOGIC（逃げる）
+// =============================================
+function updateThiefAI(thief, dt) {
+  if(thief.caught) return;
+  if(thief.inJail) {
+    thief.mesh.position.set(
+      state.jail.x + (thief.id-1)*1.2,
+      0,
+      state.jail.z
+    );
+    return;
+  }
+
+  // 警察から逃げる
+  let fx = 0, fz = 0;
+  state.police.forEach(pol => {
+    const dx = thief.x - pol.x, dz = thief.z - pol.z;
+    const d = Math.hypot(dx, dz);
+    if(d < 12) { fx += dx/d * (12-d); fz += dz/d * (12-d); }
+  });
+
+  thief.timer -= dt;
+  if(thief.timer <= 0 || (fx===0&&fz===0)) {
+    thief.dir = Math.random()*Math.PI*2;
+    thief.timer = 1 + Math.random()*2;
+  }
+
+  const len = Math.hypot(fx, fz);
+  if(len > 0.01) { fx/=len; fz/=len; }
+  else { fx=Math.sin(thief.dir); fz=Math.cos(thief.dir); }
+
+  const spd = 2.5 * dt;
+  let nx = thief.x + fx*spd;
+  let nz = thief.z + fz*spd;
+  [nx, nz] = collide(nx, nz, 0.35);
+  thief.x = nx; thief.z = nz;
+  thief.mesh.position.set(nx, 0, nz);
+  thief.mesh.rotation.y = Math.atan2(fx, fz);
+}
+
+// =============================================
+//  PLAYER UPDATE
+// =============================================
+let camYawSmooth = 0;
+function updatePlayer(dt) {
+  if(state.player.inJail) {
+    // 牢屋の中はゆっくりしか動けない
+    checkJailRescue();
+    return;
+  }
+
+  const speed = state.keys['ShiftLeft']||state.keys['ShiftRight'] ? 7 : 4.5;
+  camYawSmooth += (state.camYaw - camYawSmooth) * 0.2;
+
+  const fwd = { x: Math.sin(state.camYaw), z: Math.cos(state.camYaw) };
+  const rgt = { x: Math.cos(state.camYaw), z: -Math.sin(state.camYaw) };
+
+  let mx = 0, mz = 0;
+  if(state.keys['KeyW']||state.keys['ArrowUp'])    { mx+=fwd.x; mz+=fwd.z; }
+  if(state.keys['KeyS']||state.keys['ArrowDown'])  { mx-=fwd.x; mz-=fwd.z; }
+  if(state.keys['KeyA']||state.keys['ArrowLeft'])  { mx+=rgt.x; mz+=rgt.z; }
+  if(state.keys['KeyD']||state.keys['ArrowRight']) { mx-=rgt.x; mz-=rgt.z; }
+
+  const len = Math.hypot(mx, mz);
+  if(len > 0.01) { mx/=len; mz/=len; }
+
+  let nx = state.player.x + mx*speed*dt;
+  let nz = state.player.z + mz*speed*dt;
+  [nx, nz] = collide(nx, nz, 0.4);
+  state.player.x = nx; state.player.z = nz;
+
+  if(len > 0.01) {
+    state.player.mesh.rotation.y = Math.atan2(mx, mz);
+  }
+  state.player.mesh.position.set(nx, 0, nz);
+
+  // 牢屋にいる仲間を救出
+  checkJailRescue();
+}
+
+function checkJailRescue() {
+  const px = state.player.x, pz = state.player.z;
+  const jx = state.jail.x, jz = state.jail.z;
+  const distJ = Math.hypot(px - jx, pz - jz);
+
+  // 牢屋近くで仲間を救出
+  if(distJ < 3.5 && !state.player.inJail) {
+    state.thieves.forEach(t => {
+      if(t.inJail) {
+        t.inJail = false; t.caught = false;
+        t.x = jx + 4; t.z = jz;
+        showBanner('仲間を救出した！', '#4f8');
+      }
+    });
+  }
+  // プレイヤーが牢屋内で誰かに救出される（AI未実装→タイマーで自動脱出チャンス）
+  if(state.player.inJail && distJ > 5) {
+    // 脱出位置にいたら
+    state.player.inJail = false;
+    state.player.x = jx + 5; state.player.z = jz + 5;
+  }
+}
+
+// =============================================
+//  CAMERA
+// =============================================
+function updateCamera() {
+  const camDist = 10;
+  const camHeight = camDist * Math.sin(state.camPitch);
+  const camHoriz  = camDist * Math.cos(state.camPitch);
+
+  const tx = state.player.x;
+  const tz = state.player.z;
+
+  camera.position.x = tx - Math.sin(state.camYaw) * camHoriz;
+  camera.position.y = 1.5 + camHeight;
+  camera.position.z = tz - Math.cos(state.camYaw) * camHoriz;
+  camera.lookAt(tx, 1, tz);
+}
+
+// =============================================
+//  WIN / LOSE
+// =============================================
+function checkWinLose() {
+  const allCaught =
+    state.player.inJail &&
+    state.thieves.every(t => t.inJail || t.caught);
+
+  if(allCaught) { endGame(false); return; }
+  if(state.timeLeft <= 0) { endGame(true); return; }
+}
+
+function endGame(won) {
+  state.phase = 'result';
+  state.winner = won ? 'escape' : 'police';
+
+  const title = document.getElementById('result-title');
+  const sub = document.getElementById('result-sub');
+  if(won) {
+    title.textContent = '逃げ切った！';
+    title.style.color = '#4ef';
+    sub.textContent = '時間切れまで逃げ続けた！';
+  } else {
+    title.textContent = '全員捕まった…';
+    title.style.color = '#f44';
+    sub.textContent = '警察の勝ち！';
+  }
+  document.getElementById('result-screen').style.display = 'flex';
+
+  if(window.saveScore) {
+    const elapsed = 180 - state.timeLeft;
+    window.saveScore(won, elapsed, state.stageId);
+  }
+}
+
+// =============================================
+//  HUD & UI
+// =============================================
+function updateHUD() {
+  const m = Math.floor(state.timeLeft / 60);
+  const s = Math.floor(state.timeLeft % 60).toString().padStart(2,'0');
+  document.getElementById('timer-val').textContent = `${m}:${s}`;
+
+  const role = state.player && state.player.inJail ? '牢屋' : '泥';
+  document.getElementById('role-val').textContent = role;
+
+  const free = state.thieves.filter(t => !t.inJail && !t.caught).length +
+               (state.player && !state.player.inJail ? 1 : 0);
+  document.getElementById('score-val').textContent =
+    `${free}/${state.maxThieves+1}`;
+}
+
+let bannerTimer = null;
+function showBanner(msg, color='#4ef') {
+  const b = document.getElementById('banner');
+  b.textContent = msg;
+  b.style.color = color;
+  b.style.borderColor = color;
+  b.classList.remove('hidden');
+  if(bannerTimer) clearTimeout(bannerTimer);
+  bannerTimer = setTimeout(() => b.classList.add('hidden'), 2500);
+}
+
+// =============================================
+//  MINIMAP
+// =============================================
+const mmCanvas = document.getElementById('mm-canvas');
+const mmCtx = mmCanvas.getContext('2d');
+
+function drawMinimap() {
+  const size = 120;
+  const stageSize = STAGES[state.stageId].size;
+  const scale = size / stageSize;
+  const half = size / 2;
+
+  mmCtx.clearRect(0,0,size,size);
+  mmCtx.fillStyle = 'rgba(0,0,0,0.5)';
+  mmCtx.fillRect(0,0,size,size);
+
+  // 壁
+  mmCtx.fillStyle = '#334';
+  state.walls.forEach(w => {
+    const mx = half + w.x * scale;
+    const mz = half + w.z * scale;
+    mmCtx.fillRect(mx - w.hw*scale, mz - w.hd*scale, w.hw*scale*2, w.hd*scale*2);
+  });
+
+  // 牢屋
+  if(state.jail) {
+    mmCtx.fillStyle = 'rgba(200,200,80,0.5)';
+    const jx = half + state.jail.x * scale;
+    const jz = half + state.jail.z * scale;
+    mmCtx.fillRect(jx-5, jz-5, 10, 10);
+  }
+
+  // 警察
+  mmCtx.fillStyle = '#4af';
+  state.police.forEach(p => {
+    const mx = half + p.x * scale;
+    const mz = half + p.z * scale;
+    mmCtx.beginPath(); mmCtx.arc(mx, mz, 3, 0, Math.PI*2); mmCtx.fill();
+  });
+
+  // AI泥棒
+  state.thieves.forEach(t => {
+    mmCtx.fillStyle = t.inJail ? '#888' : '#f64';
+    const mx = half + t.x * scale;
+    const mz = half + t.z * scale;
+    mmCtx.beginPath(); mmCtx.arc(mx, mz, 2.5, 0, Math.PI*2); mmCtx.fill();
+  });
+
+  // プレイヤー
+  if(state.player) {
+    mmCtx.fillStyle = '#fff';
+    const mx = half + state.player.x * scale;
+    const mz = half + state.player.z * scale;
+    mmCtx.beginPath(); mmCtx.arc(mx, mz, 4, 0, Math.PI*2); mmCtx.fill();
+    // 視点方向
+    mmCtx.strokeStyle = '#fff';
+    mmCtx.lineWidth = 1.5;
+    mmCtx.beginPath();
+    mmCtx.moveTo(mx, mz);
+    mmCtx.lineTo(mx + Math.sin(state.camYaw)*8, mz + Math.cos(state.camYaw)*8);
+    mmCtx.stroke();
+  }
+}
+
+// =============================================
+//  CARRIED THIEF UPDATE
+// =============================================
+function updateCarriedThieves() {
+  state.police.forEach(pol => {
+    if(pol.carrying) {
+      pol.carrying.x = pol.x;
+      pol.carrying.z = pol.z;
+      pol.carrying.mesh.position.set(pol.x, 1.2, pol.z);
+    }
+  });
+}
+
+// =============================================
+//  GAME LOOP
+// =============================================
+let lastTime = 0;
+function gameLoop(ts) {
+  requestAnimationFrame(gameLoop);
+  const dt = Math.min((ts - lastTime) / 1000, 0.05);
+  lastTime = ts;
+
+  if(state.phase === 'playing') {
+    state.timeLeft = Math.max(0, state.timeLeft - dt);
+    updatePlayer(dt);
+    state.police.forEach(pol => updatePoliceAI(pol, dt));
+    state.thieves.forEach(t => updateThiefAI(t, dt));
+    updateCarriedThieves();
+    updateCamera();
+    updateHUD();
+    checkWinLose();
+    drawMinimap();
+  }
+
+  renderer.render(scene, camera);
+}
+requestAnimationFrame(gameLoop);
+
+// =============================================
+//  UI EVENTS
+// =============================================
+document.getElementById('start-btn').addEventListener('click', () => {
+  // ランダムステージ (5 or 6)
+  state.stageId = Math.random() < 0.5 ? 5 : 6;
+  document.getElementById('start-screen').style.display = 'none';
+  initStage();
+  state.phase = 'playing';
+  canvas.requestPointerLock();
+  showBanner(`STAGE ${state.stageId} スタート！`, '#4ef');
+});
+
+document.getElementById('retry-btn').addEventListener('click', () => {
+  document.getElementById('result-screen').style.display = 'none';
+  state.stageId = Math.random() < 0.5 ? 5 : 6;
+  initStage();
+  state.phase = 'playing';
+  canvas.requestPointerLock();
+  showBanner(`STAGE ${state.stageId} スタート！`, '#4ef');
+});
+</script>
+</body>
+</html>

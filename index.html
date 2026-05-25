@@ -284,7 +284,7 @@ const STAGES = {
   5: {
     name: 'STAGE 5 - URBAN GRID',
     size: 60,
-    jailPos: { x: -20, z: -20 },
+    jailPos: { x: 0, z: -5 },   // 中央道路の交差点付近・建物と重ならない位置
     generate(group, walls) {
       // 地面
       const gGeo = new THREE.PlaneGeometry(60,60,8,8);
@@ -330,7 +330,7 @@ const STAGES = {
   6: {
     name: 'STAGE 6 - MAZE CITY',
     size: 64,
-    jailPos: { x: -25, z: -25 },
+    jailPos: { x: 18, z: -18 },  // 広場的スポットのひとつと重なる位置（オープンエリア）
     generate(group, walls) {
       // 地面
       const gGeo = new THREE.PlaneGeometry(64,64,10,10);
@@ -586,7 +586,7 @@ function initStage() {
 
   // AIの泥棒
   state.thieves = [];
-  const tPositions = [[-12, -8],[-8, 12],[12, -12]];  // プレイヤー(5,5)から十分離す
+  const tPositions = [[-10, 10],[10, 10],[-10, -10]];  // 牢屋(0,-5)とプレイヤー(5,5)から離す
   for(let i=0; i<3; i++) {
     const tm = createPlayerMesh(MAT.thief);
     const [tx,tz] = tPositions[i];
@@ -686,8 +686,12 @@ function updatePoliceAI(pol, dt) {
           catchPlayer(pol);
         }
       } else {
-        pol.carrying = bestTarget;
-        bestTarget.caught = true;
+        // 既に他の警察が運んでいないか確認
+        const alreadyCarried = state.police.some(p => p !== pol && p.carrying === bestTarget);
+        if(!alreadyCarried && !bestTarget.caught) {
+          pol.carrying = bestTarget;
+          bestTarget.caught = true;
+        }
       }
     } else {
       const spd = SPEED * dt;
@@ -735,22 +739,37 @@ function catchPlayer(pol) {
 }
 
 // =============================================
-//  AI THIEF LOGIC（逃げる）
+//  AI THIEF LOGIC（逃げる＋救出）
 // =============================================
 function updateThiefAI(thief, dt) {
   if(thief.caught) return;
   if(thief.inJail) {
-    // 牢屋内でidごとにX・Zをずらして重ならないようにする
-    const offsetX = (thief.id - 1) * 1.4;  // -1.4, 0, +1.4
+    const offsetX = (thief.id - 1) * 1.4;
     thief.mesh.position.set(
       state.jail.x + offsetX,
       0,
-      state.jail.z - 0.5   // プレイヤーとZ方向でも少しずらす
+      state.jail.z - 0.5
     );
     return;
   }
 
-  // 警察から逃げる
+  const jx = state.jail.x, jz = state.jail.z;
+
+  // 牢屋に閉じ込められている人がいるか確認
+  const prisonersExist = state.player.inJail ||
+    state.thieves.some(t => t !== thief && t.inJail);
+
+  // 近くに警察がいるか
+  let nearestPoliceDist = Infinity;
+  state.police.forEach(pol => {
+    const d = Math.hypot(thief.x - pol.x, thief.z - pol.z);
+    if(d < nearestPoliceDist) nearestPoliceDist = d;
+  });
+
+  const POLICE_DANGER = 10;
+  const RESCUE_RANGE = 3.5;
+
+  // 警察から逃げる力
   let fx = 0, fz = 0;
   state.police.forEach(pol => {
     const dx = thief.x - pol.x, dz = thief.z - pol.z;
@@ -758,10 +777,78 @@ function updateThiefAI(thief, dt) {
     if(d < 12) { fx += dx/d * (12-d); fz += dz/d * (12-d); }
   });
 
+  // 救出モード
+  if(prisonersExist && nearestPoliceDist > POLICE_DANGER) {
+    const djx = jx - thief.x, djz = jz - thief.z;
+    const dj = Math.hypot(djx, djz);
+
+    if(dj < RESCUE_RANGE) {
+      let rescued = false;
+      state.thieves.forEach(t => {
+        if(t !== thief && t.inJail) {
+          t.inJail = false; t.caught = false;
+          t.x = jx + 4; t.z = jz;
+          t.dir = Math.random() * Math.PI * 2;
+          t.stuckTimer = 0;
+          showBanner('仲間がAI泥棒に救出された！', '#4f8');
+          rescued = true;
+        }
+      });
+      if(state.player.inJail && !rescued) {
+        state.player.inJail = false;
+        state.player.caught = false;
+        state.player.x = jx + 5; state.player.z = jz + 5;
+        state.player.mesh.position.set(state.player.x, 0, state.player.z);
+        showBanner('AI仲間が助けに来た！ 脱出！', '#4ef');
+      }
+      thief.dir = Math.random() * Math.PI * 2;
+      thief.timer = 2;
+      thief.stuckTimer = 0;
+    } else {
+      const len = Math.hypot(fx, fz);
+      const rescueDirX = djx / dj;
+      const rescueDirZ = djz / dj;
+      const avoidW = len > 0.01 ? 0.6 : 0;
+      fx = rescueDirX * (1 - avoidW) + (len > 0.01 ? fx/len : 0) * avoidW;
+      fz = rescueDirZ * (1 - avoidW) + (len > 0.01 ? fz/len : 0) * avoidW;
+
+      const spd = 2.8 * dt;
+      let nx = thief.x + fx*spd;
+      let nz = thief.z + fz*spd;
+      [nx, nz] = collide(nx, nz, 0.35);
+
+      // 壁スタック検出: 動けなかったら方向を変える
+      if(!thief.stuckTimer) thief.stuckTimer = 0;
+      if(Math.abs(nx - thief.x) < 0.001 && Math.abs(nz - thief.z) < 0.001) {
+        thief.stuckTimer += dt;
+        if(thief.stuckTimer > 0.3) {
+          // 壁をよけるため横方向 ± 90度にずらす
+          thief.dir = Math.atan2(fx, fz) + (Math.random() < 0.5 ? 1 : -1) * (Math.PI * 0.5 + Math.random() * 0.5);
+          thief.stuckTimer = 0;
+        }
+        fx = Math.sin(thief.dir); fz = Math.cos(thief.dir);
+        nx = thief.x + fx*spd;
+        nz = thief.z + fz*spd;
+        [nx, nz] = collide(nx, nz, 0.35);
+      } else {
+        thief.stuckTimer = 0;
+      }
+
+      thief.x = nx; thief.z = nz;
+      thief.mesh.position.set(nx, 0, nz);
+      thief.mesh.rotation.y = Math.atan2(fx, fz);
+      return;
+    }
+  }
+
+  // 通常: 警察から逃げる / ランダム歩き
   thief.timer -= dt;
+  if(!thief.stuckTimer) thief.stuckTimer = 0;
+
   if(thief.timer <= 0 || (fx===0&&fz===0)) {
     thief.dir = Math.random()*Math.PI*2;
-    thief.timer = 1 + Math.random()*2;
+    thief.timer = 1.5 + Math.random()*2;
+    thief.stuckTimer = 0;
   }
 
   const len = Math.hypot(fx, fz);
@@ -772,6 +859,20 @@ function updateThiefAI(thief, dt) {
   let nx = thief.x + fx*spd;
   let nz = thief.z + fz*spd;
   [nx, nz] = collide(nx, nz, 0.35);
+
+  // 壁スタック検出
+  if(Math.abs(nx - thief.x) < 0.001 && Math.abs(nz - thief.z) < 0.001) {
+    thief.stuckTimer += dt;
+    if(thief.stuckTimer > 0.25) {
+      // 完全に別方向に向き直す
+      thief.dir = Math.random() * Math.PI * 2;
+      thief.timer = 1.5 + Math.random() * 1.5;
+      thief.stuckTimer = 0;
+    }
+  } else {
+    thief.stuckTimer = 0;
+  }
+
   thief.x = nx; thief.z = nz;
   thief.mesh.position.set(nx, 0, nz);
   thief.mesh.rotation.y = Math.atan2(fx, fz);
@@ -993,7 +1094,10 @@ function updateCarriedThieves() {
     if(pol.carrying) {
       pol.carrying.x = pol.x;
       pol.carrying.z = pol.z;
-      pol.carrying.mesh.position.set(pol.x, 1.2, pol.z);
+      // 警察より少し後ろ・上に表示して重ならないようにする
+      const behindX = pol.x - Math.sin(pol.mesh.rotation.y) * 0.6;
+      const behindZ = pol.z - Math.cos(pol.mesh.rotation.y) * 0.6;
+      pol.carrying.mesh.position.set(behindX, 0.6, behindZ);
     }
   });
 }

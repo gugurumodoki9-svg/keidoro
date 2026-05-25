@@ -582,11 +582,11 @@ function initStage() {
   const pm = createPlayerMesh(MAT.player);
   pm.position.set(5, 0, 5);
   scene.add(pm);
-  state.player = { mesh: pm, x: 5, z: 5, vy: 0, onGround: true };
+  state.player = { mesh: pm, x: 5, z: 5, vy: 0, onGround: true, caught: false, inJail: false };
 
   // AIの泥棒
   state.thieves = [];
-  const tPositions = [[-5, -5],[-5, 5],[5,-5]];
+  const tPositions = [[-12, -8],[-8, 12],[12, -12]];  // プレイヤー(5,5)から十分離す
   for(let i=0; i<3; i++) {
     const tm = createPlayerMesh(MAT.thief);
     const [tx,tz] = tPositions[i];
@@ -626,7 +626,7 @@ function initStage() {
 //  AI LOGIC
 // =============================================
 function updatePoliceAI(pol, dt) {
-  const CATCH_DIST = 1.2;
+  const CATCH_DIST = 1.8;   // 判定距離を広げる
   const DETECT_DIST = 20;
   const SPEED = pol.speed;
 
@@ -661,7 +661,7 @@ function updatePoliceAI(pol, dt) {
   // ターゲット設定：プレイヤー or AI泥棒
   let bestDist = Infinity, bestTarget = null, bestIsPlayer = false;
 
-  if(distP < DETECT_DIST && !state.player.caught) {
+  if(distP < DETECT_DIST && !state.player.caught && !state.player.inJail) {
     bestDist = distP; bestTarget = state.player; bestIsPlayer = true;
   }
   state.thieves.forEach(t => {
@@ -682,7 +682,9 @@ function updatePoliceAI(pol, dt) {
     if(dd < CATCH_DIST) {
       // 捕まえた
       if(bestIsPlayer) {
-        catchPlayer(pol);
+        if(!state.player.caught && !state.player.inJail) {
+          catchPlayer(pol);
+        }
       } else {
         pol.carrying = bestTarget;
         bestTarget.caught = true;
@@ -728,6 +730,7 @@ function catchPlayer(pol) {
   state.player.z = jz + (Math.random()-0.5)*2;
   state.player.mesh.position.set(state.player.x, 0, state.player.z);
   state.player.inJail = true;
+  state.player.caught = true;   // 重複捕獲を防ぐ
   pol.state = 'patrol';
 }
 
@@ -737,10 +740,12 @@ function catchPlayer(pol) {
 function updateThiefAI(thief, dt) {
   if(thief.caught) return;
   if(thief.inJail) {
+    // 牢屋内でidごとにX・Zをずらして重ならないようにする
+    const offsetX = (thief.id - 1) * 1.4;  // -1.4, 0, +1.4
     thief.mesh.position.set(
-      state.jail.x + (thief.id-1)*1.2,
+      state.jail.x + offsetX,
       0,
-      state.jail.z
+      state.jail.z - 0.5   // プレイヤーとZ方向でも少しずらす
     );
     return;
   }
@@ -831,6 +836,7 @@ function checkJailRescue() {
   if(state.player.inJail && distJ > 5) {
     // 脱出位置にいたら
     state.player.inJail = false;
+    state.player.caught = false;   // 捕まりフラグもリセット
     state.player.x = jx + 5; state.player.z = jz + 5;
   }
 }

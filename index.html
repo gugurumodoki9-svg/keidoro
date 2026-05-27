@@ -62,6 +62,9 @@
     pointer-events: all;
   }
   .big-btn:hover { background: #4ef; color: #000; }
+  .stage-btn { padding: 10px 16px; font-size: 11px; letter-spacing: 1px; }
+  .stage-btn small { font-size: 9px; color: #aaa; display: block; margin-top: 2px; letter-spacing: 1px; }
+  .stage-btn:hover small { color: #000; }
 
   /* ルール説明 */
   .rules {
@@ -153,13 +156,17 @@
       <span>【泥棒】</span> として逃げ切れ！<br>
       ・3分間、警察（AI）に捕まらないように<br>
       ・牢屋に入れられた仲間を<span>タッチで救出</span><br>
-      ・全員捕まったら負け<br><br>
-      <span>【警察AI】</span> の動き<br>
-      ・プレイヤーを追跡・捕獲する<br>
-      ・捕まえたら牢屋に連れて行く<br><br>
-      <span>ステージ</span> はランダムで5 or 6が選ばれる
+      ・全員捕まったら負け
     </div>
-    <button class="big-btn" id="start-btn">START GAME</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;max-width:420px">
+      <button class="stage-btn big-btn" data-stage="1">STAGE 1<br><small>OPEN FIELD</small></button>
+      <button class="stage-btn big-btn" data-stage="2">STAGE 2<br><small>PARK</small></button>
+      <button class="stage-btn big-btn" data-stage="3">STAGE 3<br><small>WAREHOUSE</small></button>
+      <button class="stage-btn big-btn" data-stage="4">STAGE 4<br><small>SUBURB</small></button>
+      <button class="stage-btn big-btn" data-stage="5">STAGE 5<br><small>URBAN GRID</small></button>
+      <button class="stage-btn big-btn" data-stage="6">STAGE 6<br><small>MAZE CITY</small></button>
+    </div>
+    <button class="big-btn" id="start-btn">▶ RANDOM START</button>
   </div>
 
   <div id="result-screen">
@@ -284,7 +291,8 @@ const STAGES = {
   5: {
     name: 'STAGE 5 - URBAN GRID',
     size: 60,
-    jailPos: { x: 0, z: -5 },   // 中央道路の交差点付近・建物と重ならない位置
+    jailPos: { x: 0, z: -5 },
+    spawnPos: { player:[5,5], thieves:[[-10,10],[10,10],[-10,-10]], police:[[0,-20],[-20,0]] },   // 中央道路の交差点付近・建物と重ならない位置
     generate(group, walls) {
       // 地面
       const gGeo = new THREE.PlaneGeometry(60,60,8,8);
@@ -330,7 +338,8 @@ const STAGES = {
   6: {
     name: 'STAGE 6 - MAZE CITY',
     size: 64,
-    jailPos: { x: 18, z: -18 },  // 広場的スポットのひとつと重なる位置（オープンエリア）
+    jailPos: { x: 18, z: -18 },
+    spawnPos: { player:[0,25], thieves:[[-25,0],[-25,-25],[25,25]], police:[[25,0],[0,-25]] },  // 広場的スポットのひとつと重なる位置（オープンエリア）
     generate(group, walls) {
       // 地面
       const gGeo = new THREE.PlaneGeometry(64,64,10,10);
@@ -387,6 +396,118 @@ const STAGES = {
       trees.forEach(([x,z]) => addTree(group, x, z));
     }
   }
+  // ---- STAGE 1: オープンフィールド ----
+  1: {
+    name: 'STAGE 1 - OPEN FIELD',
+    size: 50,
+    jailPos: { x: -15, z: 0 },
+    spawnPos: { player:[18,18], thieves:[[-18,18],[18,-18],[-18,-18]], police:[[0,-18],[15,-5]] },
+    generate(group, walls) {
+      const gMesh = new THREE.Mesh(new THREE.PlaneGeometry(50,50,6,6), MAT.ground);
+      gMesh.rotation.x = -Math.PI/2; gMesh.receiveShadow = true;
+      group.add(gMesh);
+      addBoundaryWalls(group, walls, 50);
+      // 散らばった小さい障害物
+      const obs = [
+        {x:8,z:8,w:3,d:3,h:3},{x:-8,z:8,w:3,d:3,h:2},{x:8,z:-8,w:3,d:3,h:3},
+        {x:-8,z:-8,w:3,d:3,h:2},{x:15,z:0,w:2,d:6,h:3},{x:-15,z:5,w:6,d:2,h:3},
+        {x:0,z:15,w:5,d:2,h:2},{x:0,z:-15,w:5,d:2,h:2},
+      ];
+      obs.forEach(b => addBuilding(group, walls, b.x, b.z, b.w, b.d, b.h));
+      const trees = [[10,10],[-10,10],[10,-10],[-10,-10],[0,5],[5,0],[-5,0],[0,-5]];
+      trees.forEach(([x,z]) => addTree(group, x, z));
+    }
+  },
+  // ---- STAGE 2: 公園・曲がり道 ----
+  2: {
+    name: 'STAGE 2 - PARK',
+    size: 52,
+    jailPos: { x: 16, z: 16 },
+    spawnPos: { player:[20,-20], thieves:[[-20,-20],[-20,0],[-20,20]], police:[[0,20],[10,0]] },
+    generate(group, walls) {
+      const gMesh = new THREE.Mesh(new THREE.PlaneGeometry(52,52,8,8), MAT.ground);
+      gMesh.rotation.x = -Math.PI/2; gMesh.receiveShadow = true;
+      group.add(gMesh);
+      addBoundaryWalls(group, walls, 52);
+      // くねくね通路を作る壁
+      const pw = [
+        {x:-8,z:-20,w:1.5,d:16,h:3.5},{x:4,z:-12,w:16,d:1.5,h:3.5},
+        {x:12,z:-4,w:1.5,d:16,h:3.5},{x:-4,z:4,w:16,d:1.5,h:3.5},
+        {x:-12,z:12,w:1.5,d:16,h:3.5},{x:4,z:18,w:16,d:1.5,h:3.5},
+        {x:18,z:6,w:1.5,d:14,h:3.5},
+      ];
+      pw.forEach(w => {
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(w.w,w.h,w.d), MAT.wall2);
+        mesh.position.set(w.x, w.h/2, w.z);
+        mesh.castShadow = true; mesh.receiveShadow = true;
+        group.add(mesh);
+        walls.push({x:w.x, z:w.z, hw:w.w/2, hd:w.d/2});
+      });
+      const trees = [[0,0],[8,-8],[-8,8],[16,0],[0,16],[-16,0],[0,-16],[12,12],[-12,-12]];
+      trees.forEach(([x,z]) => addTree(group, x, z));
+    }
+  },
+  // ---- STAGE 3: 倉庫街 ----
+  3: {
+    name: 'STAGE 3 - WAREHOUSE',
+    size: 56,
+    jailPos: { x: 0, z: 18 },
+    spawnPos: { player:[20,0], thieves:[[-20,0],[0,-20],[20,-20]], police:[[20,20],[-20,-20]] },
+    generate(group, walls) {
+      const gMesh = new THREE.Mesh(new THREE.PlaneGeometry(56,56,8,8), MAT.ground);
+      gMesh.rotation.x = -Math.PI/2; gMesh.receiveShadow = true;
+      group.add(gMesh);
+      addBoundaryWalls(group, walls, 56);
+      // 大きな倉庫ブロック（通路あり）
+      const warehouses = [
+        {x:-14,z:-14,w:12,d:6,h:7},{x:14,z:-14,w:12,d:6,h:7},
+        {x:-14,z:6,w:6,d:12,h:6},{x:14,z:6,w:6,d:12,h:6},
+        {x:0,z:-20,w:8,d:4,h:8},
+        {x:-20,z:20,w:8,d:6,h:5},{x:20,z:20,w:8,d:6,h:5},
+        {x:-20,z:-5,w:4,d:8,h:6},{x:20,z:-5,w:4,d:8,h:6},
+      ];
+      warehouses.forEach(b => addBuilding(group, walls, b.x, b.z, b.w, b.d, b.h));
+      const trees = [[0,0],[7,7],[-7,7],[7,-7],[-7,-7]];
+      trees.forEach(([x,z]) => addTree(group, x, z));
+    }
+  },
+  // ---- STAGE 4: 住宅地 ----
+  4: {
+    name: 'STAGE 4 - SUBURB',
+    size: 58,
+    jailPos: { x: 0, z: 0 },
+    spawnPos: { player:[24,24], thieves:[[-24,24],[24,-24],[-24,-24]], police:[[0,-22],[-22,0]] },
+    generate(group, walls) {
+      const gMesh = new THREE.Mesh(new THREE.PlaneGeometry(58,58,10,10), MAT.ground);
+      gMesh.rotation.x = -Math.PI/2; gMesh.receiveShadow = true;
+      group.add(gMesh);
+      addBoundaryWalls(group, walls, 58);
+      // 道路
+      const rGeo = new THREE.PlaneGeometry(3, 58);
+      [-8,8].forEach(x => {
+        const r = new THREE.Mesh(rGeo, MAT.road);
+        r.rotation.x = -Math.PI/2; r.position.set(x, 0.01, 0);
+        group.add(r);
+      });
+      const rGeo2 = new THREE.PlaneGeometry(58, 3);
+      [-8,8].forEach(z => {
+        const r = new THREE.Mesh(rGeo2, MAT.road);
+        r.rotation.x = -Math.PI/2; r.position.set(0, 0.01, z);
+        group.add(r);
+      });
+      // 住宅
+      const houses = [
+        {x:-18,z:-18,w:7,d:7,h:4},{x:0,z:-18,w:5,d:7,h:4},{x:18,z:-18,w:7,d:7,h:4},
+        {x:-18,z:0,w:7,d:5,h:4},{x:18,z:0,w:7,d:5,h:4},
+        {x:-18,z:18,w:7,d:7,h:4},{x:0,z:18,w:5,d:7,h:4},{x:18,z:18,w:7,d:7,h:4},
+        {x:-24,z:-24,w:4,d:4,h:3},{x:24,z:-24,w:4,d:4,h:3},
+        {x:-24,z:24,w:4,d:4,h:3},{x:24,z:24,w:4,d:4,h:3},
+      ];
+      houses.forEach(b => addBuilding(group, walls, b.x, b.z, b.w, b.d, b.h));
+      const trees = [[0,0],[-4,-4],[4,4],[-4,4],[4,-4],[12,0],[-12,0],[0,12],[0,-12]];
+      trees.forEach(([x,z]) => addTree(group, x, z));
+    }
+  },
 };
 
 // =============================================
@@ -538,24 +659,47 @@ document.addEventListener('mousemove', e => {
 });
 
 // =============================================
-//  COLLISION
+//  COLLISION (壁スライド対応・角スタック防止)
 // =============================================
 function collide(x, z, radius) {
   let nx = x, nz = z;
-  for(const w of state.walls) {
-    const dx = nx - w.x, dz = nz - w.z;
-    const ox = w.hw + radius - Math.abs(dx);
-    const oz = w.hd + radius - Math.abs(dz);
-    if(ox > 0 && oz > 0) {
-      if(ox < oz) nx += Math.sign(dx) * ox;
-      else        nz += Math.sign(dz) * oz;
+  // 3回反復で角スタックを防ぐ
+  for(let iter = 0; iter < 3; iter++) {
+    for(const w of state.walls) {
+      const dx = nx - w.x, dz = nz - w.z;
+      const ox = w.hw + radius - Math.abs(dx);
+      const oz = w.hd + radius - Math.abs(dz);
+      if(ox > 0 && oz > 0) {
+        if(ox < oz) nx += Math.sign(dx) * ox;
+        else        nz += Math.sign(dz) * oz;
+      }
     }
   }
-  // 境界
   const half = (STAGES[state.stageId].size/2) - 1;
   nx = Math.max(-half, Math.min(half, nx));
   nz = Math.max(-half, Math.min(half, nz));
   return [nx, nz];
+}
+
+// AIウォールアボイド: 壁にぶつかったとき軸分離で滑る
+function moveAI(entity, fx, fz, spd, radius) {
+  const tx = entity.x + fx * spd;
+  const tz = entity.z + fz * spd;
+  const [rx, rz] = collide(tx, tz, radius);
+  const blockedX = Math.abs(rx - tx) > 0.005;
+  const blockedZ = Math.abs(rz - tz) > 0.005;
+  if(!blockedX && !blockedZ) return { x: rx, z: rz, stuck: false };
+  // X方向だけ試す
+  if(!blockedX) {
+    const [sx] = collide(tx, entity.z, radius);
+    return { x: sx, z: entity.z, stuck: false };
+  }
+  // Z方向だけ試す
+  if(!blockedZ) {
+    const [, sz] = collide(entity.x, tz, radius);
+    return { x: entity.x, z: sz, stuck: false };
+  }
+  return { x: entity.x, z: entity.z, stuck: true };
 }
 
 // =============================================
@@ -577,42 +721,52 @@ function initStage() {
 
   scene.add(sg);
 
+  // スポーン位置はステージごとに定義、なければデフォルト
+  const sp = stg.spawnPos || {
+    player: [5, 5],
+    thieves: [[-10,10],[10,10],[-10,-10]],
+    police:  [[0,-20],[-20,0]]
+  };
+
   // プレイヤー（泥棒）
   if(state.player && state.player.mesh) scene.remove(state.player.mesh);
   const pm = createPlayerMesh(MAT.player);
-  pm.position.set(5, 0, 5);
+  const [plx, plz] = sp.player;
+  pm.position.set(plx, 0, plz);
   scene.add(pm);
-  state.player = { mesh: pm, x: 5, z: 5, vy: 0, onGround: true, caught: false, inJail: false };
+  state.player = { mesh: pm, x: plx, z: plz, vy: 0, onGround: true, caught: false, inJail: false };
 
   // AIの泥棒
+  state.thieves.forEach(t => { if(t.mesh) scene.remove(t.mesh); });
   state.thieves = [];
-  const tPositions = [[-10, 10],[10, 10],[-10, -10]];  // 牢屋(0,-5)とプレイヤー(5,5)から離す
-  for(let i=0; i<3; i++) {
+  for(let i=0; i<sp.thieves.length; i++) {
     const tm = createPlayerMesh(MAT.thief);
-    const [tx,tz] = tPositions[i];
+    const [tx,tz] = sp.thieves[i];
     tm.position.set(tx, 0, tz);
     scene.add(tm);
     state.thieves.push({
       mesh: tm, x: tx, z: tz, caught: false, inJail: false,
       id: i, vx: 0, vz: 0, timer: 0,
       dir: Math.random()*Math.PI*2,
+      stuckTimer: 0, wallSideTimer: 0, wallSide: 1,
     });
   }
 
-  // 警察AI
+  // 警察AI（既存削除）
+  state.police.forEach(p => { if(p.mesh) scene.remove(p.mesh); });
   state.police = [];
-  const policePositions = [[0, -20], [-20, 0]];
-  for(let i=0; i<2; i++) {
+  for(let i=0; i<sp.police.length; i++) {
     const pm2 = createPlayerMesh(MAT.police);
-    const [px,pz] = policePositions[i];
+    const [px,pz] = sp.police[i];
     pm2.position.set(px, 0, pz);
     scene.add(pm2);
     state.police.push({
       mesh: pm2, x: px, z: pz,
-      state: 'patrol', // patrol / chase / return / escort
+      state: 'patrol',
       target: null, carrying: null,
       patrolTimer: 0, patrolDir: Math.random()*Math.PI*2,
-      speed: 3.0 + i*0.3,
+      speed: 3.0 + i*0.2,
+      stuckTimer: 0,
     });
   }
 
@@ -648,11 +802,9 @@ function updatePoliceAI(pol, dt) {
       showBanner('泥棒が捕まった！ タッチで救出！', '#fa4');
     } else {
       const spd = SPEED * 0.9 * dt;
-      let nx = pol.x + (djx/dj)*spd;
-      let nz = pol.z + (djz/dj)*spd;
-      [nx, nz] = collide(nx, nz, 0.4);
-      pol.x = nx; pol.z = nz;
-      pol.mesh.position.set(nx, 0, nz);
+      const r = moveAI(pol, djx/dj, djz/dj, spd, 0.4);
+      pol.x = r.x; pol.z = r.z;
+      pol.mesh.position.set(r.x, 0, r.z);
       pol.mesh.rotation.y = Math.atan2(djx, djz);
     }
     return;
@@ -695,11 +847,9 @@ function updatePoliceAI(pol, dt) {
       }
     } else {
       const spd = SPEED * dt;
-      let nx = pol.x + (ddx/dd)*spd;
-      let nz = pol.z + (ddz/dd)*spd;
-      [nx, nz] = collide(nx, nz, 0.4);
-      pol.x = nx; pol.z = nz;
-      pol.mesh.position.set(nx, 0, nz);
+      const r = moveAI(pol, ddx/dd, ddz/dd, spd, 0.4);
+      pol.x = r.x; pol.z = r.z;
+      pol.mesh.position.set(r.x, 0, r.z);
       pol.mesh.rotation.y = Math.atan2(ddx, ddz);
     }
   } else {
@@ -711,12 +861,20 @@ function updatePoliceAI(pol, dt) {
       pol.patrolTimer = 1.5 + Math.random() * 2;
     }
     const spd = SPEED * 0.5 * dt;
-    let nx = pol.x + Math.sin(pol.patrolDir)*spd;
-    let nz = pol.z + Math.cos(pol.patrolDir)*spd;
-    [nx, nz] = collide(nx, nz, 0.4);
-    if(nx===pol.x && nz===pol.z) pol.patrolDir = Math.random()*Math.PI*2;
-    pol.x = nx; pol.z = nz;
-    pol.mesh.position.set(nx, 0, nz);
+    const fx = Math.sin(pol.patrolDir), fz = Math.cos(pol.patrolDir);
+    const r = moveAI(pol, fx, fz, spd, 0.4);
+    if(r.stuck) {
+      pol.stuckTimer = (pol.stuckTimer||0) + dt;
+      if(pol.stuckTimer > 0.3) {
+        pol.patrolDir = Math.random()*Math.PI*2;
+        pol.patrolTimer = 0;
+        pol.stuckTimer = 0;
+      }
+    } else {
+      pol.stuckTimer = 0;
+    }
+    pol.x = r.x; pol.z = r.z;
+    pol.mesh.position.set(r.x, 0, r.z);
     pol.mesh.rotation.y = pol.patrolDir;
   }
 }
@@ -739,145 +897,129 @@ function catchPlayer(pol) {
 }
 
 // =============================================
-//  AI THIEF LOGIC（逃げる＋救出）
+//  AI THIEF LOGIC（逃げる＋救出・壁回避強化）
 // =============================================
 function updateThiefAI(thief, dt) {
   if(thief.caught) return;
   if(thief.inJail) {
     const offsetX = (thief.id - 1) * 1.4;
-    thief.mesh.position.set(
-      state.jail.x + offsetX,
-      0,
-      state.jail.z - 0.5
-    );
+    thief.mesh.position.set(state.jail.x + offsetX, 0, state.jail.z - 0.5);
     return;
   }
 
   const jx = state.jail.x, jz = state.jail.z;
+  if(!thief.stuckTimer)   thief.stuckTimer = 0;
+  if(!thief.wallSideTimer) thief.wallSideTimer = 0;
+  if(!thief.wallSide)     thief.wallSide = 1;
 
-  // 牢屋に閉じ込められている人がいるか確認
+  // 牢屋に誰かいるか
   const prisonersExist = state.player.inJail ||
     state.thieves.some(t => t !== thief && t.inJail);
 
-  // 近くに警察がいるか
-  let nearestPoliceDist = Infinity;
+  // 最近接警察距離
+  let nearestPoliceDist = Infinity, nearestPolice = null;
   state.police.forEach(pol => {
     const d = Math.hypot(thief.x - pol.x, thief.z - pol.z);
-    if(d < nearestPoliceDist) nearestPoliceDist = d;
+    if(d < nearestPoliceDist) { nearestPoliceDist = d; nearestPolice = pol; }
   });
 
-  const POLICE_DANGER = 10;
-  const RESCUE_RANGE = 3.5;
+  const POLICE_DANGER = 12;
+  const RESCUE_RANGE  = 3.5;
+  const RADIUS = 0.4;
 
-  // 警察から逃げる力
-  let fx = 0, fz = 0;
-  state.police.forEach(pol => {
-    const dx = thief.x - pol.x, dz = thief.z - pol.z;
-    const d = Math.hypot(dx, dz);
-    if(d < 12) { fx += dx/d * (12-d); fz += dz/d * (12-d); }
-  });
+  // ---- 移動目標ベクトルを決める ----
+  let goalX, goalZ, goalLabel;
 
-  // 救出モード
   if(prisonersExist && nearestPoliceDist > POLICE_DANGER) {
-    const djx = jx - thief.x, djz = jz - thief.z;
-    const dj = Math.hypot(djx, djz);
-
-    if(dj < RESCUE_RANGE) {
-      let rescued = false;
-      state.thieves.forEach(t => {
-        if(t !== thief && t.inJail) {
-          t.inJail = false; t.caught = false;
-          t.x = jx + 4; t.z = jz;
-          t.dir = Math.random() * Math.PI * 2;
-          t.stuckTimer = 0;
-          showBanner('仲間がAI泥棒に救出された！', '#4f8');
-          rescued = true;
-        }
-      });
-      if(state.player.inJail && !rescued) {
-        state.player.inJail = false;
-        state.player.caught = false;
-        state.player.x = jx + 5; state.player.z = jz + 5;
-        state.player.mesh.position.set(state.player.x, 0, state.player.z);
-        showBanner('AI仲間が助けに来た！ 脱出！', '#4ef');
-      }
-      thief.dir = Math.random() * Math.PI * 2;
-      thief.timer = 2;
-      thief.stuckTimer = 0;
-    } else {
-      const len = Math.hypot(fx, fz);
-      const rescueDirX = djx / dj;
-      const rescueDirZ = djz / dj;
-      const avoidW = len > 0.01 ? 0.6 : 0;
-      fx = rescueDirX * (1 - avoidW) + (len > 0.01 ? fx/len : 0) * avoidW;
-      fz = rescueDirZ * (1 - avoidW) + (len > 0.01 ? fz/len : 0) * avoidW;
-
-      const spd = 2.8 * dt;
-      let nx = thief.x + fx*spd;
-      let nz = thief.z + fz*spd;
-      [nx, nz] = collide(nx, nz, 0.35);
-
-      // 壁スタック検出: 動けなかったら方向を変える
-      if(!thief.stuckTimer) thief.stuckTimer = 0;
-      if(Math.abs(nx - thief.x) < 0.001 && Math.abs(nz - thief.z) < 0.001) {
-        thief.stuckTimer += dt;
-        if(thief.stuckTimer > 0.3) {
-          // 壁をよけるため横方向 ± 90度にずらす
-          thief.dir = Math.atan2(fx, fz) + (Math.random() < 0.5 ? 1 : -1) * (Math.PI * 0.5 + Math.random() * 0.5);
-          thief.stuckTimer = 0;
-        }
-        fx = Math.sin(thief.dir); fz = Math.cos(thief.dir);
-        nx = thief.x + fx*spd;
-        nz = thief.z + fz*spd;
-        [nx, nz] = collide(nx, nz, 0.35);
-      } else {
-        thief.stuckTimer = 0;
-      }
-
-      thief.x = nx; thief.z = nz;
-      thief.mesh.position.set(nx, 0, nz);
-      thief.mesh.rotation.y = Math.atan2(fx, fz);
-      return;
+    // 救出モード
+    goalX = jx; goalZ = jz; goalLabel = 'rescue';
+  } else if(nearestPolice && nearestPoliceDist < POLICE_DANGER) {
+    // 逃げモード: 警察の逆方向
+    const dx = thief.x - nearestPolice.x;
+    const dz = thief.z - nearestPolice.z;
+    const d  = Math.hypot(dx, dz) || 1;
+    goalX = thief.x + dx/d * 20;
+    goalZ = thief.z + dz/d * 20;
+    goalLabel = 'flee';
+  } else {
+    // ランダム徘徊
+    thief.timer -= dt;
+    if(thief.timer <= 0) {
+      thief.dir   = Math.random() * Math.PI * 2;
+      thief.timer = 2 + Math.random() * 2;
     }
+    goalX = thief.x + Math.sin(thief.dir) * 10;
+    goalZ = thief.z + Math.cos(thief.dir) * 10;
+    goalLabel = 'wander';
   }
 
-  // 通常: 警察から逃げる / ランダム歩き
-  thief.timer -= dt;
-  if(!thief.stuckTimer) thief.stuckTimer = 0;
+  // ゴールへの方向ベクトル
+  const gdx = goalX - thief.x, gdz = goalZ - thief.z;
+  const gd  = Math.hypot(gdx, gdz) || 1;
+  let fx = gdx/gd, fz = gdz/gd;
 
-  if(thief.timer <= 0 || (fx===0&&fz===0)) {
-    thief.dir = Math.random()*Math.PI*2;
-    thief.timer = 1.5 + Math.random()*2;
+  // 救出到達判定
+  if(goalLabel === 'rescue' && gd < RESCUE_RANGE) {
+    let rescued = false;
+    state.thieves.forEach(t => {
+      if(t !== thief && t.inJail) {
+        t.inJail = false; t.caught = false;
+        t.x = jx + 4; t.z = jz;
+        t.dir = Math.random() * Math.PI * 2;
+        t.stuckTimer = 0;
+        showBanner('仲間がAI泥棒に救出された！', '#4f8');
+        rescued = true;
+      }
+    });
+    if(!rescued && state.player.inJail) {
+      state.player.inJail = false;
+      state.player.caught = false;
+      state.player.x = jx + 5; state.player.z = jz + 5;
+      state.player.mesh.position.set(state.player.x, 0, state.player.z);
+      showBanner('AI仲間が助けに来た！ 脱出！', '#4ef');
+    }
+    thief.dir = Math.random() * Math.PI * 2;
+    thief.timer = 2;
     thief.stuckTimer = 0;
+    return;
   }
 
-  const len = Math.hypot(fx, fz);
-  if(len > 0.01) { fx/=len; fz/=len; }
-  else { fx=Math.sin(thief.dir); fz=Math.cos(thief.dir); }
+  // ---- moveAI で移動（壁スライド）----
+  const spd = (goalLabel === 'rescue' ? 2.9 : 2.5) * dt;
+  const r = moveAI(thief, fx, fz, spd, RADIUS);
 
-  const spd = 2.5 * dt;
-  let nx = thief.x + fx*spd;
-  let nz = thief.z + fz*spd;
-  [nx, nz] = collide(nx, nz, 0.35);
-
-  // 壁スタック検出
-  if(Math.abs(nx - thief.x) < 0.001 && Math.abs(nz - thief.z) < 0.001) {
+  if(r.stuck) {
+    // 完全スタック → 壁沿いウォールフォロー
     thief.stuckTimer += dt;
-    if(thief.stuckTimer > 0.25) {
-      // 完全に別方向に向き直す
+    thief.wallSideTimer -= dt;
+    if(thief.wallSideTimer <= 0) {
+      // どちら側に沿うかランダム決定
+      thief.wallSide = Math.random() < 0.5 ? 1 : -1;
+      thief.wallSideTimer = 1.5 + Math.random();
+    }
+    // 90度横方向を試す
+    const perpX =  fz * thief.wallSide;
+    const perpZ = -fx * thief.wallSide;
+    const r2 = moveAI(thief, perpX, perpZ, spd * 1.2, RADIUS);
+    if(!r2.stuck) {
+      thief.x = r2.x; thief.z = r2.z;
+      thief.mesh.position.set(r2.x, 0, r2.z);
+      thief.mesh.rotation.y = Math.atan2(perpX, perpZ);
+    }
+    // 長時間スタックなら方向リセット
+    if(thief.stuckTimer > 1.5) {
       thief.dir = Math.random() * Math.PI * 2;
-      thief.timer = 1.5 + Math.random() * 1.5;
+      thief.timer = 0;
       thief.stuckTimer = 0;
+      thief.wallSideTimer = 0;
     }
   } else {
     thief.stuckTimer = 0;
+    thief.x = r.x; thief.z = r.z;
+    thief.mesh.position.set(r.x, 0, r.z);
+    thief.mesh.rotation.y = Math.atan2(fx, fz);
   }
-
-  thief.x = nx; thief.z = nz;
-  thief.mesh.position.set(nx, 0, nz);
-  thief.mesh.rotation.y = Math.atan2(fx, fz);
 }
-
 // =============================================
 //  PLAYER UPDATE
 // =============================================
@@ -1130,23 +1272,26 @@ requestAnimationFrame(gameLoop);
 // =============================================
 //  UI EVENTS
 // =============================================
-document.getElementById('start-btn').addEventListener('click', () => {
-  // ランダムステージ (5 or 6)
-  state.stageId = Math.random() < 0.5 ? 5 : 6;
+function startGame(stageId) {
+  state.stageId = stageId;
   document.getElementById('start-screen').style.display = 'none';
+  document.getElementById('result-screen').style.display = 'none';
   initStage();
   state.phase = 'playing';
   canvas.requestPointerLock();
-  showBanner(`STAGE ${state.stageId} スタート！`, '#4ef');
+  showBanner(`STAGE ${stageId} スタート！`, '#4ef');
+}
+
+document.getElementById('start-btn').addEventListener('click', () => {
+  startGame(Math.ceil(Math.random() * 6));
+});
+
+document.querySelectorAll('.stage-btn').forEach(btn => {
+  btn.addEventListener('click', () => startGame(Number(btn.dataset.stage)));
 });
 
 document.getElementById('retry-btn').addEventListener('click', () => {
-  document.getElementById('result-screen').style.display = 'none';
-  state.stageId = Math.random() < 0.5 ? 5 : 6;
-  initStage();
-  state.phase = 'playing';
-  canvas.requestPointerLock();
-  showBanner(`STAGE ${state.stageId} スタート！`, '#4ef');
+  startGame(state.stageId);  // 同じステージでリトライ
 });
 </script>
 </body>
